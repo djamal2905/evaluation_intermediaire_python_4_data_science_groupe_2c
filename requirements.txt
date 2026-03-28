@@ -1,6 +1,6 @@
 # Gestion des données
 pandas==3.0.1
-numpy==2.4.3
+numpy<2
 
 # Visualisation
 matplotlib==3.7.2
