@@ -8,33 +8,35 @@ from matplotlib.colors import LinearSegmentedColormap
 
 class Cartographie:
     """
-    Classe pour gérer la cartographie des départements français et la visualisation
-    des scores par candidat.
+    Classe de gestion et visualisation de cartes électorales
+    sur les départements français.
 
-    Attributs
-    ---------
-    departement_borders : GeoDataFrame | None
-        Contient les frontières des départements téléchargées.
+    Attributes
+    ----------
+    departement_borders : gpd.GeoDataFrame | None
+        Contient les frontières des départements.
     """
 
     def __init__(self) -> None:
-        """Initialise une instance de Cartographie sans frontières de départements."""
+        """
+        Initialise la classe sans données géographiques chargées.
+        """
         self.departement_borders: gpd.GeoDataFrame | None = None
 
     def does_departement_borders_exist(self) -> bool:
         """
-        Vérifie si les frontières des départements ont été téléchargées.
+        Vérifie si les frontières des départements sont chargées.
 
         Returns
         -------
         bool
-            True si les frontières existent, False sinon.
+            True si les données existent, False sinon.
         """
         return self.departement_borders is not None
 
     def download_departement_borders(
         self,
-        values: list[str] = ["France"],
+        values: list[str] | None = None,
         crs: int = 4326,
         borders: str = "DEPARTEMENT",
         vectorfile_format: str = "geojson",
@@ -44,132 +46,141 @@ class Cartographie:
         year: int = 2022,
     ) -> None:
         """
-        Télécharge les frontières des départements français via Cartiflette.
+        Télécharge les frontières des départements français.
 
-        Paramètres
+        Parameters
         ----------
-        values : list[str], optional
-            Liste de valeurs géographiques à télécharger (défaut ["France"]).
-        crs : int, optional
-            Système de coordonnées (défaut 4326).
-        borders : str, optional
-            Type de frontière à récupérer (défaut "DEPARTEMENT").
-        vectorfile_format : str, optional
-            Format du fichier vectoriel (défaut "geojson").
-        simplification : int, optional
-            Pourcentage de simplification géométrique (défaut 50).
-        filter_by : str, optional
-            Filtre sur la zone géographique (défaut "FRANCE_ENTIERE_DROM_RAPPROCHES").
-        source : str, optional
-            Source du téléchargement (défaut "EXPRESS-COG-CARTO-TERRITOIRE").
-        year : int, optional
-            Année des données (défaut 2022).
-
-        Returns
-        -------
-        None
+        values : list[str] | None
+            Zones à télécharger.
+        crs : int
+            Système de coordonnées.
+        borders : str
+            Type de frontière.
+        vectorfile_format : str
+            Format du fichier.
+        simplification : int
+            Niveau de simplification géométrique.
+        filter_by : str
+            Filtre géographique.
+        source : str
+            Source des données.
+        year : int
+            Année des données.
         """
-        if not self.does_departement_borders_exist():
-            try:
-                self.departement_borders = carti_download(
-                    values=values,
-                    crs=crs,
-                    borders=borders,
-                    vectorfile_format=vectorfile_format,
-                    simplification=simplification,
-                    filter_by=filter_by,
-                    source=source,
-                    year=year,
-                )
-            except Exception as e:
-                print(
-                    "Une erreur s'est produite lors du téléchargement "
-                    f"des frontières des départements: {e}"
-                )
-        else:
-            print("Les frontières des départements ont déjà été téléchargées.")
+        if values is None:
+            values = ["France"]
 
-    def afficher_resultats_filtre_score_candidat(
+        if self.departement_borders is not None:
+            print("Les frontières sont déjà chargées.")
+            return
+
+        try:
+            self.departement_borders = carti_download(
+                values=values,
+                crs=crs,
+                borders=borders,
+                vectorfile_format=vectorfile_format,
+                simplification=simplification,
+                filter_by=filter_by,
+                source=source,
+                year=year,
+            )
+        except Exception as error:
+            print(
+                "Erreur lors du téléchargement des frontières : "
+                f"{error}"
+            )
+
+    def afficher_resultats_filtre_candidat(
         self,
         df_score: pd.DataFrame,
         candidat: str = "Marine LE PEN",
         departement_code: str | None = None,
         afficher_carte: bool = False,
-        figSize: tuple[int, int] = (12, 14),
-    ):
+        fig_size: tuple[int, int] = (12, 14),
+    ) -> None:
         """
-        Filtre les scores d'un candidat par département et trace la carte.
+        Filtre les résultats d'un candidat et affiche une carte.
 
-        Paramètres
+        Parameters
         ----------
         df_score : pd.DataFrame
-            DataFrame contenant les colonnes ['code_departement', 'candidat',
-            'votes_departement', 'score_departement'].
-        candidat : str, optional
-            Nom du candidat à filtrer (défaut "Marine LE PEN").
-        departement_code : str | None, optional
-            Code département à filtrer, None pour tous les départements (défaut None).
-        afficher_carte : bool, optional
-            True pour afficher la carte après génération (défaut False).
-        figSize : tuple[int, int], optional
-            Taille de la figure matplotlib (défaut (12, 14)).
+            Doit contenir :
+            - code_departement
+            - candidat
+            - votes_departement
+            - surrepresentation
+        candidat : str
+            Nom du candidat.
+        departement_code : str | None
+            Filtre sur un département.
+        afficher_carte : bool
+            Affiche la carte si True.
+        fig_size : tuple[int, int]
+            Taille de la figure matplotlib.
         """
-        # Vérifier que toutes les colonnes nécessaires sont présentes
+
         required_cols = [
             "code_departement",
             "candidat",
             "votes_departement",
-            "score_departement",
+            "surrepresentation",
         ]
-        if not all(col in df_score.columns for col in required_cols):
-            raise ValueError(
-                f"Le DataFrame df_score doit contenir les colonnes {required_cols}"
-            )
 
-        # Filtrer par candidat (insensible à la casse)
-        df_candidat = df_score[df_score["candidat"].str.lower() == candidat.lower()]
+        missing = [col for col in required_cols if col not in df_score.columns]
+        if missing:
+            raise ValueError(f"Colonnes manquantes : {missing}")
 
-        # Filtrer par département si fourni
+        df_candidat = df_score[
+            df_score["candidat"].str.lower() == candidat.lower()
+        ]
+
         if departement_code is not None:
             df_candidat = df_candidat[
                 df_candidat["code_departement"] == departement_code
             ]
 
-        # Merge avec les frontières
+        if self.departement_borders is None:
+            raise ValueError("Les frontières départementales ne sont pas chargées.")
+
         df_plot = self.departement_borders.merge(
-            df_candidat, right_on="code_departement", left_on="INSEE_DEP", how="left"
+            df_candidat,
+            left_on="INSEE_DEP",
+            right_on="code_departement",
+            how="left",
         )
 
-        # Création figure
-        fig, ax = plt.subplots(1, 1, figsize=figSize)
+        fig, ax = plt.subplots(1, 1, figsize=fig_size)
 
-        # Colormap bleu ciel -> blanc -> rose foncé
         colors = ["#0CA8E6", "#FFFFFF", "#CD1039"]
         cmap = LinearSegmentedColormap.from_list("blue_pink", colors)
 
-        # Tracé
         df_plot.plot(
-            column="score_departement",
+            column="surrepresentation",
             cmap=cmap,
             linewidth=0.8,
             edgecolor="black",
+            vmin=df_candidat["surrepresentation"].min(),
+            vmax=df_candidat["surrepresentation"].max(),
             legend=True,
             ax=ax,
-            legend_kwds={"label": "", "orientation": "vertical", "shrink": 0.5},
+            legend_kwds={
+                "label": "",
+                "orientation": "vertical",
+                "shrink": 0.5,
+            },
         )
 
-        # Colorbar
         cbar = ax.get_figure().get_axes()[-1]
         cbar.text(
-            x=0.5,
-            y=1,
-            s="% par rapport à la moyenne nationale",
+            0.5,
+            1,
+            "% par rapport à la moyenne nationale",
             ha="center",
             va="bottom",
             transform=cbar.transAxes,
         )
 
-        # Flèche du Nord
         ax.annotate(
             "N",
             xy=(0.95, 0.98),
@@ -181,7 +192,6 @@ class Cartographie:
             xycoords=ax.transAxes,
         )
 
-        # Échelle
         scalebar = ScaleBar(
             1,
             units="m",
@@ -193,14 +203,12 @@ class Cartographie:
         )
         ax.add_artist(scalebar)
 
-        # Supprimer axes
         ax.set_axis_off()
 
-        # Titre
         ax.set_title(
-            f"Score obtenu par le.a candidat.e {candidat} par département", fontsize=16
+            f"Score du candidat {candidat} par département",
+            fontsize=16,
         )
 
-        # Afficher la carte si demandé
         if afficher_carte:
             plt.show()
